@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { supabase } from "../lib/supabase";
 import {
   LineChart,
   Line,
@@ -52,8 +53,13 @@ interface ChartPoint {
 }
 
 export default function InvestmentApp() {
-  const [user, setUser] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  const [user, setUser] = useState<{ email: string } | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isRegister, setIsRegister] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
   const [initialValue, setInitialValue] = useState("");
   const [monthlyContribution, setMonthlyContribution] = useState("");
   const [rate, setRate] = useState("");
@@ -64,25 +70,48 @@ export default function InvestmentApp() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const savedUser = localStorage.getItem("inv_user");
-    if (savedUser) setUser(savedUser);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.email) {
+        setUser({ email: session.user.email });
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.email) {
+        setUser({ email: session.user.email });
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = () => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError("Por favor, insira seu nome.");
+  const handleAuth = async () => {
+    setAuthError("");
+    setAuthLoading(true);
+
+    if (!email || !password) {
+      setAuthError("Preencha e-mail e senha.");
+      setAuthLoading(false);
       return;
     }
-    localStorage.setItem("inv_user", trimmed);
-    setUser(trimmed);
-    setError("");
+
+    if (isRegister) {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) setAuthError(error.message);
+      else setAuthError("✅ Conta criada! Verifique seu e-mail para confirmar.");
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setAuthError("E-mail ou senha incorretos.");
+    }
+
+    setAuthLoading(false);
   };
 
-  const logout = () => {
-    localStorage.removeItem("inv_user");
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    setName("");
     setResult(null);
     setChartData([]);
   };
@@ -152,6 +181,7 @@ export default function InvestmentApp() {
     divider: { borderTop: "1px solid #1a3040", margin: "16px 0" },
     gridTwo: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" },
     fieldGroup: { display: "flex", flexDirection: "column" },
+    toggleBtn: { background: "transparent", border: "none", color: "#00e5a0", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", marginTop: "12px", textDecoration: "underline", padding: 0 },
   };
 
   if (!user) {
@@ -164,17 +194,44 @@ export default function InvestmentApp() {
             <p style={styles.subtitle}>Calcule o futuro do seu dinheiro.</p>
           </div>
           <div style={styles.card}>
-            <label style={styles.label}>Seu nome</label>
+            <label style={styles.label}>{isRegister ? "Criar conta" : "Entrar"}</label>
+
+            <label style={{ ...styles.label, marginTop: "8px" }}>E-mail</label>
             <input
               style={styles.input}
-              type="text"
-              placeholder="Ex: João Silva"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && login()}
+              type="email"
+              placeholder="seu@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAuth()}
             />
-            {error && <div style={styles.errorBox}>{error}</div>}
-            <button style={styles.button} onClick={login}>Começar →</button>
+
+            <label style={styles.label}>Senha</label>
+            <input
+              style={styles.input}
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAuth()}
+            />
+
+            {authError && (
+              <div style={{
+                ...styles.errorBox,
+                ...(authError.startsWith("✅") ? { borderColor: "#00e5a0", color: "#00e5a0", background: "rgba(0,229,160,0.07)" } : {})
+              }}>
+                {authError}
+              </div>
+            )}
+
+            <button style={styles.button} onClick={handleAuth} disabled={authLoading}>
+              {authLoading ? "Aguarde..." : isRegister ? "Criar conta" : "Entrar →"}
+            </button>
+
+            <button style={styles.toggleBtn} onClick={() => { setIsRegister(!isRegister); setAuthError(""); }}>
+              {isRegister ? "Já tenho conta — fazer login" : "Não tenho conta — criar agora"}
+            </button>
           </div>
         </div>
       </div>
@@ -187,7 +244,7 @@ export default function InvestmentApp() {
         <div style={styles.topBar}>
           <div>
             <p style={styles.tag}>Simulador</p>
-            <h1 style={{ ...styles.title, fontSize: "22px" }}>Olá, {user}</h1>
+            <h1 style={{ ...styles.title, fontSize: "18px" }}>{user.email}</h1>
           </div>
           <button style={styles.logoutBtn} onClick={logout}>Sair</button>
         </div>
