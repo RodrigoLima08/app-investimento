@@ -65,10 +65,11 @@ interface Simulation {
 }
 
 export default function InvestmentApp() {
-  const [user, setUser] = useState<{ email: string; id: string } | null>(null);
+  const [user, setUser] = useState<{ email: string; id: string; name: string } | null>(null);
   const [isPremium, setIsPremium] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -90,15 +91,17 @@ export default function InvestmentApp() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        setUser({ email: session.user.email!, id: session.user.id });
-        checkPremium(session.user.id);
+        const name = session.user.user_metadata?.full_name || session.user.email!.split("@")[0];
+        setUser({ email: session.user.email!, id: session.user.id, name });
+        setIsPremium(true);
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        setUser({ email: session.user.email!, id: session.user.id });
-        checkPremium(session.user.id);
+        const name = session.user.user_metadata?.full_name || session.user.email!.split("@")[0];
+        setUser({ email: session.user.email!, id: session.user.id, name });
+        setIsPremium(true);
       } else {
         setUser(null);
         setIsPremium(false);
@@ -107,18 +110,6 @@ export default function InvestmentApp() {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  const checkPremium = async (userId: string) => {
-    const { data } = await supabase
-      .from("simulations")
-      .select("id")
-      .eq("user_id", userId)
-      .limit(1);
-    // Por enquanto considera premium quem tem simulacoes salvas
-    // Futuramente verificar tabela de assinaturas do Stripe
-    setIsPremium(true); // Liberar para todos por enquanto durante testes
-    console.log("user:", userId, "data:", data);
-  };
 
   const handleAuth = async () => {
     setAuthError("");
@@ -131,7 +122,18 @@ export default function InvestmentApp() {
     }
 
     if (isRegister) {
-      const { error } = await supabase.auth.signUp({ email, password });
+      if (!fullName.trim()) {
+        setAuthError("Preencha seu nome.");
+        setAuthLoading(false);
+        return;
+      }
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: fullName.trim() }
+        }
+      });
       if (error) setAuthError(error.message);
       else setAuthError("Conta criada! Verifique seu e-mail para confirmar.");
     } else {
@@ -242,16 +244,7 @@ export default function InvestmentApp() {
   };
 
   const styles: { [key: string]: React.CSSProperties } = {
-    root: {
-      minHeight: "100vh",
-      background: "#080f18",
-      fontFamily: "'DM Mono', 'Courier New', monospace",
-      color: "#e8f5f0",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "24px",
-    },
+    root: { minHeight: "100vh", background: "#080f18", fontFamily: "'DM Mono', 'Courier New', monospace", color: "#e8f5f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" },
     container: { width: "100%", maxWidth: "520px" },
     tag: { fontSize: "11px", letterSpacing: "3px", color: "#00e5a0", textTransform: "uppercase", marginBottom: "8px" },
     title: { fontSize: "28px", fontWeight: "700", color: "#e8f5f0", lineHeight: 1.2, margin: 0 },
@@ -296,10 +289,20 @@ export default function InvestmentApp() {
           </div>
           <div style={styles.card}>
             <label style={styles.label}>{isRegister ? "Criar conta" : "Entrar"}</label>
-            <label style={{ ...styles.label, marginTop: "8px" }}>E-mail</label>
+
+            {isRegister && (
+              <>
+                <label style={{ ...styles.label, marginTop: "8px" }}>Nome</label>
+                <input style={styles.input} type="text" placeholder="Seu nome completo" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+              </>
+            )}
+
+            <label style={{ ...styles.label, marginTop: isRegister ? "0" : "8px" }}>E-mail</label>
             <input style={styles.input} type="email" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
+
             <label style={styles.label}>Senha</label>
             <input style={styles.input} type="password" placeholder="........" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
+
             {authError && (
               <div style={{ ...styles.errorBox, ...(authError.startsWith("Conta") ? { borderColor: "#00e5a0", color: "#00e5a0", background: "rgba(0,229,160,0.07)" } : {}) }}>
                 {authError}
@@ -308,7 +311,7 @@ export default function InvestmentApp() {
             <button style={styles.button} onClick={handleAuth} disabled={authLoading}>
               {authLoading ? "Aguarde..." : isRegister ? "Criar conta" : "Entrar"}
             </button>
-            <button style={styles.toggleBtn} onClick={() => { setIsRegister(!isRegister); setAuthError(""); }}>
+            <button style={styles.toggleBtn} onClick={() => { setIsRegister(!isRegister); setAuthError(""); setFullName(""); }}>
               {isRegister ? "Ja tenho conta - fazer login" : "Nao tenho conta - criar agora"}
             </button>
           </div>
@@ -323,7 +326,7 @@ export default function InvestmentApp() {
         <div style={styles.topBar}>
           <div>
             <p style={styles.tag}>Simulador</p>
-            <h1 style={{ ...styles.title, fontSize: "18px" }}>{user.email}</h1>
+            <h1 style={{ ...styles.title, fontSize: "20px" }}>Ola, {user.name}!</h1>
           </div>
           <button style={styles.logoutBtn} onClick={logout}>Sair</button>
         </div>
