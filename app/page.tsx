@@ -32,7 +32,7 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
         color: "#e8f5f0",
         fontSize: "13px",
       }}>
-        <p style={{ color: "#00e5a0", marginBottom: 4, fontWeight: 600 }}>Mês {label}</p>
+        <p style={{ color: "#00e5a0", marginBottom: 4, fontWeight: 600 }}>Mes {label}</p>
         <p>{formatBRL(payload[0].value)}</p>
       </div>
     );
@@ -59,6 +59,7 @@ export default function InvestmentApp() {
   const [isRegister, setIsRegister] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const [initialValue, setInitialValue] = useState("");
   const [monthlyContribution, setMonthlyContribution] = useState("");
@@ -100,7 +101,7 @@ export default function InvestmentApp() {
     if (isRegister) {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) setAuthError(error.message);
-      else setAuthError("✅ Conta criada! Verifique seu e-mail para confirmar.");
+      else setAuthError("Conta criada! Verifique seu e-mail para confirmar.");
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setAuthError("E-mail ou senha incorretos.");
@@ -116,6 +117,19 @@ export default function InvestmentApp() {
     setChartData([]);
   };
 
+  const handleCheckout = async () => {
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/checkout", { method: "POST" });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else setError("Erro ao iniciar pagamento. Tente novamente.");
+    } catch {
+      setError("Erro ao conectar com o servidor.");
+    }
+    setCheckoutLoading(false);
+  };
+
   const calculate = () => {
     setError("");
     const principal = parseFloat(initialValue);
@@ -127,7 +141,7 @@ export default function InvestmentApp() {
     if (!principal || principal <= 0) return setError("Valor inicial deve ser positivo.");
     if (!r || r <= 0) return setError("Taxa de juros deve ser positiva.");
     if (!t || t <= 0) return setError("Tempo deve ser positivo.");
-    if (contribution < 0) return setError("Aporte mensal não pode ser negativo.");
+    if (contribution < 0) return setError("Aporte mensal nao pode ser negativo.");
 
     const data: ChartPoint[] = [];
     let total = principal;
@@ -144,8 +158,8 @@ export default function InvestmentApp() {
     if (g) {
       goalMessage =
         total >= g
-          ? { text: "🎉 Você atingirá sua meta!", success: true }
-          : { text: "⚠️ Você não atingirá sua meta. Aumente o investimento ou o prazo.", success: false };
+          ? { text: "Voce atingira sua meta!", success: true }
+          : { text: "Voce nao atingira sua meta. Aumente o investimento ou o prazo.", success: false };
     }
 
     setChartData(data);
@@ -171,6 +185,7 @@ export default function InvestmentApp() {
     label: { fontSize: "11px", letterSpacing: "2px", color: "#00e5a0", textTransform: "uppercase", marginBottom: "6px", display: "block" },
     input: { width: "100%", background: "#080f18", border: "1px solid #1a3040", borderRadius: "8px", padding: "12px 14px", color: "#e8f5f0", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit", marginBottom: "16px" },
     button: { width: "100%", background: "#00e5a0", color: "#080f18", border: "none", borderRadius: "8px", padding: "14px", fontSize: "13px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", marginTop: "4px" },
+    premiumButton: { width: "100%", background: "linear-gradient(135deg, #f7c948, #f59e0b)", color: "#080f18", border: "none", borderRadius: "8px", padding: "14px", fontSize: "13px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", marginTop: "8px" },
     logoutBtn: { background: "transparent", border: "1px solid #1a3040", color: "#4a7a6a", borderRadius: "8px", padding: "8px 16px", fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit" },
     topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" },
     statRow: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "20px" },
@@ -182,6 +197,9 @@ export default function InvestmentApp() {
     gridTwo: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" },
     fieldGroup: { display: "flex", flexDirection: "column" },
     toggleBtn: { background: "transparent", border: "none", color: "#00e5a0", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", marginTop: "12px", textDecoration: "underline", padding: 0 },
+    premiumCard: { background: "rgba(247,201,72,0.05)", border: "1px solid #f7c948", borderRadius: "16px", padding: "24px", marginBottom: "20px", textAlign: "center" },
+    premiumTitle: { fontSize: "16px", fontWeight: "700", color: "#f7c948", marginBottom: "8px" },
+    premiumDesc: { fontSize: "12px", color: "#a89060", marginBottom: "16px", lineHeight: 1.6 },
   };
 
   if (!user) {
@@ -195,7 +213,6 @@ export default function InvestmentApp() {
           </div>
           <div style={styles.card}>
             <label style={styles.label}>{isRegister ? "Criar conta" : "Entrar"}</label>
-
             <label style={{ ...styles.label, marginTop: "8px" }}>E-mail</label>
             <input
               style={styles.input}
@@ -205,32 +222,28 @@ export default function InvestmentApp() {
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAuth()}
             />
-
             <label style={styles.label}>Senha</label>
             <input
               style={styles.input}
               type="password"
-              placeholder="••••••••"
+              placeholder="........"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAuth()}
             />
-
             {authError && (
               <div style={{
                 ...styles.errorBox,
-                ...(authError.startsWith("✅") ? { borderColor: "#00e5a0", color: "#00e5a0", background: "rgba(0,229,160,0.07)" } : {})
+                ...(authError.startsWith("Conta") ? { borderColor: "#00e5a0", color: "#00e5a0", background: "rgba(0,229,160,0.07)" } : {})
               }}>
                 {authError}
               </div>
             )}
-
             <button style={styles.button} onClick={handleAuth} disabled={authLoading}>
-              {authLoading ? "Aguarde..." : isRegister ? "Criar conta" : "Entrar →"}
+              {authLoading ? "Aguarde..." : isRegister ? "Criar conta" : "Entrar"}
             </button>
-
             <button style={styles.toggleBtn} onClick={() => { setIsRegister(!isRegister); setAuthError(""); }}>
-              {isRegister ? "Já tenho conta — fazer login" : "Não tenho conta — criar agora"}
+              {isRegister ? "Ja tenho conta - fazer login" : "Nao tenho conta - criar agora"}
             </button>
           </div>
         </div>
@@ -262,19 +275,19 @@ export default function InvestmentApp() {
           </div>
           <div style={styles.gridTwo}>
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Taxa ao mês (%)</label>
+              <label style={styles.label}>Taxa ao mes (%)</label>
               <input style={styles.input} type="number" placeholder="1.0" value={rate} onChange={(e) => setRate(e.target.value)} />
             </div>
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Período (meses)</label>
+              <label style={styles.label}>Periodo (meses)</label>
               <input style={styles.input} type="number" placeholder="24" value={time} onChange={(e) => setTime(e.target.value)} />
             </div>
           </div>
           <div style={styles.divider} />
-          <label style={styles.label}>Meta financeira (R$) — opcional</label>
+          <label style={styles.label}>Meta financeira (R$) - opcional</label>
           <input style={styles.input} type="number" placeholder="Ex: 50000" value={goal} onChange={(e) => setGoal(e.target.value)} />
           {error && <div style={styles.errorBox}>{error}</div>}
-          <button style={styles.button} onClick={calculate}>Calcular projeção</button>
+          <button style={styles.button} onClick={calculate}>Calcular projecao</button>
         </div>
 
         {result && (
@@ -307,7 +320,7 @@ export default function InvestmentApp() {
             )}
 
             <div style={styles.card}>
-              <p style={{ ...styles.tag, marginBottom: "16px" }}>Evolução patrimonial</p>
+              <p style={{ ...styles.tag, marginBottom: "16px" }}>Evolucao patrimonial</p>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a3040" />
@@ -320,6 +333,18 @@ export default function InvestmentApp() {
             </div>
           </>
         )}
+
+        <div style={styles.premiumCard}>
+          <p style={styles.premiumTitle}>SimInvest Premium</p>
+          <p style={styles.premiumDesc}>
+            Salve simulacoes, compare cenarios e exporte relatorios em PDF.
+            Tudo por apenas R$ 19,90/mes.
+          </p>
+          <button style={styles.premiumButton} onClick={handleCheckout} disabled={checkoutLoading}>
+            {checkoutLoading ? "Aguarde..." : "Assinar Premium - R$ 19,90/mes"}
+          </button>
+        </div>
+
       </div>
     </div>
   );
