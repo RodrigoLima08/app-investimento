@@ -52,14 +52,31 @@ interface ChartPoint {
   value: number;
 }
 
+interface Simulation {
+  id: string;
+  initial_value: number;
+  monthly_contribution: number;
+  rate: number;
+  time_months: number;
+  future_value: number;
+  total_invested: number;
+  earnings: number;
+  created_at: string;
+}
+
 export default function InvestmentApp() {
-  const [user, setUser] = useState<{ email: string } | null>(null);
+  const [user, setUser] = useState<{ email: string; id: string } | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [simulations, setSimulations] = useState<Simulation[]>([]);
 
   const [initialValue, setInitialValue] = useState("");
   const [monthlyContribution, setMonthlyContribution] = useState("");
@@ -72,21 +89,36 @@ export default function InvestmentApp() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email) {
-        setUser({ email: session.user.email });
+      if (session?.user) {
+        setUser({ email: session.user.email!, id: session.user.id });
+        checkPremium(session.user.id);
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.email) {
-        setUser({ email: session.user.email });
+      if (session?.user) {
+        setUser({ email: session.user.email!, id: session.user.id });
+        checkPremium(session.user.id);
       } else {
         setUser(null);
+        setIsPremium(false);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const checkPremium = async (userId: string) => {
+    const { data } = await supabase
+      .from("simulations")
+      .select("id")
+      .eq("user_id", userId)
+      .limit(1);
+    // Por enquanto considera premium quem tem simulacoes salvas
+    // Futuramente verificar tabela de assinaturas do Stripe
+    setIsPremium(true); // Liberar para todos por enquanto durante testes
+    console.log("user:", userId, "data:", data);
+  };
 
   const handleAuth = async () => {
     setAuthError("");
@@ -115,6 +147,7 @@ export default function InvestmentApp() {
     setUser(null);
     setResult(null);
     setChartData([]);
+    setSimulations([]);
   };
 
   const handleCheckout = async () => {
@@ -132,6 +165,7 @@ export default function InvestmentApp() {
 
   const calculate = () => {
     setError("");
+    setSaveSuccess(false);
     const principal = parseFloat(initialValue);
     const contribution = parseFloat(monthlyContribution) || 0;
     const r = parseFloat(rate) / 100;
@@ -166,6 +200,47 @@ export default function InvestmentApp() {
     setResult({ futureValue: total, totalInvested, earnings, goalMessage });
   };
 
+  const saveSimulation = async () => {
+    if (!result || !user) return;
+    setSaveLoading(true);
+
+    const { error } = await supabase.from("simulations").insert({
+      user_id: user.id,
+      initial_value: parseFloat(initialValue),
+      monthly_contribution: parseFloat(monthlyContribution) || 0,
+      rate: parseFloat(rate),
+      time_months: parseInt(time),
+      goal: parseFloat(goal) || null,
+      future_value: result.futureValue,
+      total_invested: result.totalInvested,
+      earnings: result.earnings,
+    });
+
+    if (!error) {
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } else {
+      setError("Erro ao salvar simulacao.");
+    }
+    setSaveLoading(false);
+  };
+
+  const loadSimulations = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("simulations")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+    setSimulations(data || []);
+    setShowHistory(true);
+  };
+
+  const deleteSimulation = async (id: string) => {
+    await supabase.from("simulations").delete().eq("id", id);
+    setSimulations((prev) => prev.filter((s) => s.id !== id));
+  };
+
   const styles: { [key: string]: React.CSSProperties } = {
     root: {
       minHeight: "100vh",
@@ -185,7 +260,9 @@ export default function InvestmentApp() {
     label: { fontSize: "11px", letterSpacing: "2px", color: "#00e5a0", textTransform: "uppercase", marginBottom: "6px", display: "block" },
     input: { width: "100%", background: "#080f18", border: "1px solid #1a3040", borderRadius: "8px", padding: "12px 14px", color: "#e8f5f0", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit", marginBottom: "16px" },
     button: { width: "100%", background: "#00e5a0", color: "#080f18", border: "none", borderRadius: "8px", padding: "14px", fontSize: "13px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", marginTop: "4px" },
-    premiumButton: { width: "100%", background: "linear-gradient(135deg, #f7c948, #f59e0b)", color: "#080f18", border: "none", borderRadius: "8px", padding: "14px", fontSize: "13px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", marginTop: "8px" },
+    secondaryButton: { width: "100%", background: "transparent", color: "#00e5a0", border: "1px solid #00e5a0", borderRadius: "8px", padding: "12px", fontSize: "12px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", marginTop: "8px" },
+    saveButton: { width: "100%", background: "transparent", color: "#00e5a0", border: "1px solid #00e5a0", borderRadius: "8px", padding: "12px", fontSize: "12px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", marginTop: "8px" },
+    premiumButton: { width: "100%", background: "#f7c948", color: "#080f18", border: "none", borderRadius: "8px", padding: "14px", fontSize: "13px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", marginTop: "8px" },
     logoutBtn: { background: "transparent", border: "1px solid #1a3040", color: "#4a7a6a", borderRadius: "8px", padding: "8px 16px", fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit" },
     topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" },
     statRow: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "20px" },
@@ -193,6 +270,7 @@ export default function InvestmentApp() {
     statLabel: { fontSize: "10px", letterSpacing: "2px", color: "#4a7a6a", textTransform: "uppercase", marginBottom: "6px" },
     statValue: { fontSize: "13px", fontWeight: "700", color: "#00e5a0" },
     errorBox: { background: "rgba(255,80,80,0.08)", border: "1px solid #ff5050", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#ff8080", marginBottom: "16px" },
+    successBox: { background: "rgba(0,229,160,0.07)", border: "1px solid #00e5a0", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#00e5a0", marginBottom: "16px", textAlign: "center" },
     divider: { borderTop: "1px solid #1a3040", margin: "16px 0" },
     gridTwo: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" },
     fieldGroup: { display: "flex", flexDirection: "column" },
@@ -200,6 +278,11 @@ export default function InvestmentApp() {
     premiumCard: { background: "rgba(247,201,72,0.05)", border: "1px solid #f7c948", borderRadius: "16px", padding: "24px", marginBottom: "20px", textAlign: "center" },
     premiumTitle: { fontSize: "16px", fontWeight: "700", color: "#f7c948", marginBottom: "8px" },
     premiumDesc: { fontSize: "12px", color: "#a89060", marginBottom: "16px", lineHeight: 1.6 },
+    historyItem: { background: "#080f18", border: "1px solid #1a3040", borderRadius: "10px", padding: "14px", marginBottom: "10px" },
+    historyDate: { fontSize: "10px", color: "#4a7a6a", marginBottom: "6px" },
+    historyValue: { fontSize: "14px", fontWeight: "700", color: "#00e5a0" },
+    historyDetail: { fontSize: "11px", color: "#4a7a6a", marginTop: "4px" },
+    deleteBtn: { background: "transparent", border: "none", color: "#ff5050", fontSize: "11px", cursor: "pointer", fontFamily: "inherit", float: "right" },
   };
 
   if (!user) {
@@ -214,28 +297,11 @@ export default function InvestmentApp() {
           <div style={styles.card}>
             <label style={styles.label}>{isRegister ? "Criar conta" : "Entrar"}</label>
             <label style={{ ...styles.label, marginTop: "8px" }}>E-mail</label>
-            <input
-              style={styles.input}
-              type="email"
-              placeholder="seu@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAuth()}
-            />
+            <input style={styles.input} type="email" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
             <label style={styles.label}>Senha</label>
-            <input
-              style={styles.input}
-              type="password"
-              placeholder="........"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAuth()}
-            />
+            <input style={styles.input} type="password" placeholder="........" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
             {authError && (
-              <div style={{
-                ...styles.errorBox,
-                ...(authError.startsWith("Conta") ? { borderColor: "#00e5a0", color: "#00e5a0", background: "rgba(0,229,160,0.07)" } : {})
-              }}>
+              <div style={{ ...styles.errorBox, ...(authError.startsWith("Conta") ? { borderColor: "#00e5a0", color: "#00e5a0", background: "rgba(0,229,160,0.07)" } : {}) }}>
                 {authError}
               </div>
             )}
@@ -331,7 +397,44 @@ export default function InvestmentApp() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
+
+            {isPremium && (
+              <div style={{ marginBottom: "20px" }}>
+                {saveSuccess && <div style={styles.successBox}>Simulacao salva com sucesso!</div>}
+                <button style={styles.saveButton} onClick={saveSimulation} disabled={saveLoading}>
+                  {saveLoading ? "Salvando..." : "Salvar simulacao"}
+                </button>
+              </div>
+            )}
           </>
+        )}
+
+        {isPremium && (
+          <div style={{ marginBottom: "20px" }}>
+            <button style={styles.secondaryButton} onClick={showHistory ? () => setShowHistory(false) : loadSimulations}>
+              {showHistory ? "Ocultar historico" : "Ver historico de simulacoes"}
+            </button>
+          </div>
+        )}
+
+        {showHistory && (
+          <div style={styles.card}>
+            <p style={{ ...styles.tag, marginBottom: "16px" }}>Historico</p>
+            {simulations.length === 0 ? (
+              <p style={{ color: "#4a7a6a", fontSize: "13px" }}>Nenhuma simulacao salva ainda.</p>
+            ) : (
+              simulations.map((sim) => (
+                <div key={sim.id} style={styles.historyItem}>
+                  <button style={styles.deleteBtn} onClick={() => deleteSimulation(sim.id)}>Excluir</button>
+                  <p style={styles.historyDate}>{new Date(sim.created_at).toLocaleDateString("pt-BR")}</p>
+                  <p style={styles.historyValue}>{formatBRL(sim.future_value)}</p>
+                  <p style={styles.historyDetail}>
+                    Inicial: {formatBRL(sim.initial_value)} | Taxa: {sim.rate}% | {sim.time_months} meses
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
         )}
 
         <div style={styles.premiumCard}>
