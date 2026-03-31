@@ -88,12 +88,21 @@ export default function InvestmentApp() {
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [error, setError] = useState("");
 
+  const checkPremium = async (userId: string) => {
+    const { data } = await supabase
+      .from("subscribers")
+      .select("is_premium")
+      .eq("user_id", userId)
+      .single();
+    setIsPremium(data?.is_premium === true);
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         const name = session.user.user_metadata?.full_name || session.user.email!.split("@")[0];
         setUser({ email: session.user.email!, id: session.user.id, name });
-        setIsPremium(true);
+        checkPremium(session.user.id);
       }
     });
 
@@ -101,7 +110,7 @@ export default function InvestmentApp() {
       if (session?.user) {
         const name = session.user.user_metadata?.full_name || session.user.email!.split("@")[0];
         setUser({ email: session.user.email!, id: session.user.id, name });
-        setIsPremium(true);
+        checkPremium(session.user.id);
       } else {
         setUser(null);
         setIsPremium(false);
@@ -130,9 +139,7 @@ export default function InvestmentApp() {
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: { full_name: fullName.trim() }
-        }
+        options: { data: { full_name: fullName.trim() } }
       });
       if (error) setAuthError(error.message);
       else setAuthError("Conta criada! Verifique seu e-mail para confirmar.");
@@ -147,6 +154,7 @@ export default function InvestmentApp() {
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    setIsPremium(false);
     setResult(null);
     setChartData([]);
     setSimulations([]);
@@ -155,7 +163,11 @@ export default function InvestmentApp() {
   const handleCheckout = async () => {
     setCheckoutLoading(true);
     try {
-      const res = await fetch("/api/checkout", { method: "POST" });
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id, email: user?.email }),
+      });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
       else setError("Erro ao iniciar pagamento. Tente novamente.");
@@ -271,6 +283,7 @@ export default function InvestmentApp() {
     premiumCard: { background: "rgba(247,201,72,0.05)", border: "1px solid #f7c948", borderRadius: "16px", padding: "24px", marginBottom: "20px", textAlign: "center" },
     premiumTitle: { fontSize: "16px", fontWeight: "700", color: "#f7c948", marginBottom: "8px" },
     premiumDesc: { fontSize: "12px", color: "#a89060", marginBottom: "16px", lineHeight: 1.6 },
+    lockBox: { background: "rgba(247,201,72,0.05)", border: "1px dashed #f7c948", borderRadius: "10px", padding: "14px", marginBottom: "12px", textAlign: "center", fontSize: "12px", color: "#a89060" },
     historyItem: { background: "#080f18", border: "1px solid #1a3040", borderRadius: "10px", padding: "14px", marginBottom: "10px" },
     historyDate: { fontSize: "10px", color: "#4a7a6a", marginBottom: "6px" },
     historyValue: { fontSize: "14px", fontWeight: "700", color: "#00e5a0" },
@@ -289,20 +302,16 @@ export default function InvestmentApp() {
           </div>
           <div style={styles.card}>
             <label style={styles.label}>{isRegister ? "Criar conta" : "Entrar"}</label>
-
             {isRegister && (
               <>
                 <label style={{ ...styles.label, marginTop: "8px" }}>Nome</label>
                 <input style={styles.input} type="text" placeholder="Seu nome completo" value={fullName} onChange={(e) => setFullName(e.target.value)} />
               </>
             )}
-
             <label style={{ ...styles.label, marginTop: isRegister ? "0" : "8px" }}>E-mail</label>
             <input style={styles.input} type="email" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
-
             <label style={styles.label}>Senha</label>
             <input style={styles.input} type="password" placeholder="........" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
-
             {authError && (
               <div style={{ ...styles.errorBox, ...(authError.startsWith("Conta") ? { borderColor: "#00e5a0", color: "#00e5a0", background: "rgba(0,229,160,0.07)" } : {}) }}>
                 {authError}
@@ -401,12 +410,16 @@ export default function InvestmentApp() {
               </ResponsiveContainer>
             </div>
 
-            {isPremium && (
+            {isPremium ? (
               <div style={{ marginBottom: "20px" }}>
                 {saveSuccess && <div style={styles.successBox}>Simulacao salva com sucesso!</div>}
                 <button style={styles.saveButton} onClick={saveSimulation} disabled={saveLoading}>
                   {saveLoading ? "Salvando..." : "Salvar simulacao"}
                 </button>
+              </div>
+            ) : (
+              <div style={styles.lockBox}>
+                🔒 Salvar simulacoes e ver historico é um recurso Premium
               </div>
             )}
           </>
@@ -443,12 +456,15 @@ export default function InvestmentApp() {
         <div style={styles.premiumCard}>
           <p style={styles.premiumTitle}>SimInvest Premium</p>
           <p style={styles.premiumDesc}>
-            Salve simulacoes, compare cenarios e exporte relatorios em PDF.
-            Tudo por apenas R$ 19,90/mes.
+            {isPremium
+              ? "Voce ja e um assinante Premium! Obrigado pelo apoio."
+              : "Salve simulacoes, compare cenarios e exporte relatorios. R$ 19,90/mes."}
           </p>
-          <button style={styles.premiumButton} onClick={handleCheckout} disabled={checkoutLoading}>
-            {checkoutLoading ? "Aguarde..." : "Assinar Premium - R$ 19,90/mes"}
-          </button>
+          {!isPremium && (
+            <button style={styles.premiumButton} onClick={handleCheckout} disabled={checkoutLoading}>
+              {checkoutLoading ? "Aguarde..." : "Assinar Premium - R$ 19,90/mes"}
+            </button>
+          )}
         </div>
 
       </div>
